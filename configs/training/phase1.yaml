@@ -1,0 +1,12 @@
+epochs: 30
+batch_size: 32              # also the relational target's arity, not just throughput
+learning_rate: 1.0e-4       # AdamW, scaled by sqrt(batch_size / lr_base_batch_size)
+lr_base_batch_size: 32
+enable_amp: true
+
+block_size: 8               # batch_size must be a multiple of this
+night_frac: 0.5             # probability that a block is drawn from the night pool
+
+use_scheduler: true
+warmup_frac: 0.03           # per-step linear warmup, then cosine
+min_lr_frac: 0.05

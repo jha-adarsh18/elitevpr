@@ -1,0 +1,3 @@
+name: structural_kl
+weight: 1.0
+temperature: 1.0            # in units of sigma: both matrices are z-scored

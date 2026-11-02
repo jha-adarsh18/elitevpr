@@ -1,0 +1,15 @@
+[workspace]
+name = "elitevpr"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.12.*"
+pytest = ">=9.2.0,<10"
+
+[pypi-dependencies]
+elitevpr = { path = ".", editable = true }
+
+[tasks]
+train = "python -m elitevpr.train"
+test = "pytest -q"

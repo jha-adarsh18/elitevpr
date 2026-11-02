@@ -1,0 +1,3 @@
+name: wandb
+project: elitevpr
+mode: null                  # null = whatever WANDB_MODE says

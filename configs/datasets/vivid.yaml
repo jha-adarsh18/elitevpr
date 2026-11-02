@@ -1,0 +1,18 @@
+# ViViD++ driving rig: DVXplorer 640x480 -- DSEC's event resolution exactly --
+# with an equidistant Flea3 RGB. Train-only.
+#
+# Its contribution is a measured null: dropping it moved Brisbane day-night by
+# +7.28, inside the 9.4 pp seed bar. Kept as the reported recipe's third
+# corpus; `~corpora.vivid` is the 2-corpus arm.
+root_dir: ${data_root}/vivid
+output_dir: ${data_root}/vivid/features
+teacher_dir: ${data_root}/vivid/megaloc
+pair_stride: 1
+
+train_seq_list: null
+val_seq_list: []
+
+night_sequences:
+  - campus_night
+  - city_night
+  - urban_night

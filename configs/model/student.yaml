@@ -1,0 +1,10 @@
+backbone_name: vit_small_patch16_dinov3.lvd1689m
+img_size: 384               # 384/16 -> 576 patch tokens
+num_patches: 576
+teacher_dim: 1024           # width of the student's own per-patch projection
+in_channels: 3
+pretrained: true
+
+# clamp = stock GeM (state-dict key `gem.p`); signed = sign-preserving GeM and
+# mean = the p=1 control (both `pool.p`). The reported model is `signed`.
+pooling: signed
