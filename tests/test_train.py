@@ -9,7 +9,8 @@ from hydra import compose, initialize_config_dir
 from elitevpr.train import main_worker
 
 CONFIGS = str(Path(__file__).resolve().parents[1] / "configs")
-ARMS = ["structural_kl", "feature_cosine", "sp_kd"]
+ARMS = ["structural_kl", "feature_cosine", "feature_mse", "infonce",
+        "rkd", "sp_kd"]
 
 
 def _cfg(smoke_root, loss, **extra):

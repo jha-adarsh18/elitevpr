@@ -1,0 +1,4 @@
+name: rkd
+weight: 1.0
+weight_distance: 1.0        # Park et al.
+weight_angle: 2.0

@@ -14,7 +14,8 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from elitevpr.losses import FeatureCosine, SimilarityPreserving, StructuralKL, build_loss
+from elitevpr.losses import (FeatureCosine, FeatureMSE, InfoNCE, RKD,
+                             SimilarityPreserving, StructuralKL, build_loss)
 
 REFERENCE_STRUCTURAL_LOSS = '''def structural_loss(student_global, teacher_global, temperature):
     """The settled fixed loss: drop the self-term, z-score, tau in sigma units.
@@ -115,6 +116,75 @@ def test_sp_kd_invariant_to_descriptor_scale():
                           criterion(student * 5.0, teacher * 0.2), atol=1e-5)
 
 
+def test_feature_mse_is_twice_feature_cosine():
+    """On unit vectors ||a-b||^2 = 2(1-a.b), so B is A doubled, exactly."""
+    student, teacher = torch.randn(8, 16), torch.randn(8, 24)
+    mse = FeatureMSE(student_dim=16, teacher_dim=24)
+    cosine = FeatureCosine(student_dim=16, teacher_dim=24)
+    cosine.load_state_dict(mse.state_dict())
+    assert torch.allclose(mse(student, teacher), 2.0 * cosine(student, teacher),
+                          atol=1e-6)
+
+
+def test_feature_mse_cannot_be_gamed_by_shrinking_the_projection():
+    """The projection is normalised, so scaling its output changes nothing."""
+    criterion = FeatureMSE(student_dim=4, teacher_dim=4)
+    student, teacher = torch.randn(6, 4), torch.randn(6, 4)
+    before = criterion(student, teacher)
+    with torch.no_grad():
+        criterion.head.weight.mul_(1e-3)
+        criterion.head.bias.mul_(1e-3)
+    assert torch.allclose(criterion(student, teacher), before, atol=1e-4)
+
+
+def test_infonce_matches_the_published_form():
+    criterion = InfoNCE(student_dim=16, teacher_dim=24, temperature=0.07)
+    student, teacher = torch.randn(8, 16), torch.randn(8, 24)
+
+    zs = F.normalize(criterion.head(student), dim=1)
+    logits = zs @ F.normalize(teacher, dim=1).T / 0.07
+    expected = F.cross_entropy(logits, torch.arange(8))
+    assert torch.allclose(criterion(student, teacher), expected, atol=1e-6)
+
+
+def test_infonce_is_minimised_by_the_matching_pair():
+    """A perfectly aligned batch must beat the same batch with rolled targets."""
+    criterion = InfoNCE(student_dim=4, teacher_dim=4, temperature=0.07)
+    with torch.no_grad():
+        criterion.head.weight.copy_(torch.eye(4))
+        criterion.head.bias.zero_()
+    teacher = F.normalize(torch.randn(6, 4), dim=1)
+    assert criterion(teacher, teacher) < criterion(teacher.roll(1, 0), teacher)
+
+
+def test_rkd_is_zero_when_the_geometry_agrees():
+    descriptors = torch.randn(10, 64)
+    assert RKD()(descriptors, descriptors).abs() < 1e-7
+
+
+def test_rkd_needs_no_projection_and_has_no_parameters():
+    """Distances and angles are ratios, so 1024-d vs 8448-d compares directly."""
+    criterion = RKD()
+    assert list(criterion.parameters()) == []
+    loss = criterion(torch.randn(8, 1024), torch.randn(8, 8448))
+    assert torch.isfinite(loss) and loss > 0
+
+
+def test_rkd_invariant_to_descriptor_scale():
+    student, teacher = torch.randn(10, 64), torch.randn(10, 96)
+    criterion = RKD()
+    assert torch.allclose(criterion(student, teacher),
+                          criterion(student * 5.0, teacher * 0.2), atol=1e-5)
+
+
+def test_rkd_weights_the_two_terms_as_published():
+    student, teacher = torch.randn(8, 32), torch.randn(8, 48)
+    only_d = RKD(weight_distance=1.0, weight_angle=0.0)(student, teacher)
+    only_a = RKD(weight_distance=0.0, weight_angle=1.0)(student, teacher)
+    both = RKD(weight_distance=1.0, weight_angle=2.0)(student, teacher)
+    assert torch.allclose(both, only_d + 2.0 * only_a, atol=1e-6)
+
+
 def test_build_loss_dispatch():
     from omegaconf import OmegaConf
 
@@ -124,5 +194,12 @@ def test_build_loss_dispatch():
                                  1024, 8448), FeatureCosine)
     assert isinstance(build_loss(OmegaConf.create({"name": "sp_kd"}), 1024, 8448),
                       SimilarityPreserving)
+    assert isinstance(build_loss(OmegaConf.create({"name": "feature_mse"}),
+                                 1024, 8448), FeatureMSE)
+    assert isinstance(build_loss(OmegaConf.create(
+        {"name": "infonce", "temperature": 0.07}), 1024, 8448), InfoNCE)
+    assert isinstance(build_loss(OmegaConf.create(
+        {"name": "rkd", "weight_distance": 1.0, "weight_angle": 2.0}),
+        1024, 8448), RKD)
     with pytest.raises(ValueError, match="unknown loss"):
         build_loss(OmegaConf.create({"name": "nope"}), 1024, 8448)
