@@ -2,7 +2,7 @@
 # contributes a validation split.
 root_dir: ${data_root}/dsec
 output_dir: ${data_root}/dsec/features     # holds <seq>/frames.txt, which fixes cache row order
-teacher_dir: ${data_root}/dsec/megaloc
+teacher_dir: ${data_root}/dsec/${teacher.dir_name}
 pair_stride: 1
 
 train_seq_list:

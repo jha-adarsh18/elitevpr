@@ -4,6 +4,11 @@ learning_rate: 1.0e-4       # AdamW, scaled by sqrt(batch_size / lr_base_batch_s
 lr_base_batch_size: 32
 enable_amp: true
 
+# `block` yields contiguous clips so the relational objectives have related
+# frames inside one batch; `random` draws every index uniformly from the whole
+# corpus, which is the control that measures what the blocks are worth.
+# block_size and night_frac apply to `block` only.
+sampler: block
 block_size: 8               # batch_size must be a multiple of this
 night_frac: 0.5             # probability that a block is drawn from the night pool
 

@@ -5,10 +5,12 @@ from .feature_mse import FeatureMSE
 from .infonce import InfoNCE
 from .rkd import RKD
 from .sp_kd import SimilarityPreserving
+from .sp_kd_std import SimilarityPreservingStandardized
 from .structural_kl import StructuralKL
 
 __all__ = ["FeatureCosine", "FeatureMSE", "InfoNCE", "RKD",
-           "SimilarityPreserving", "StructuralKL", "build_loss"]
+           "SimilarityPreserving", "SimilarityPreservingStandardized",
+           "StructuralKL", "build_loss"]
 
 
 def build_loss(cfg, student_dim, teacher_dim):
@@ -23,9 +25,13 @@ def build_loss(cfg, student_dim, teacher_dim):
     if name == "infonce":
         return InfoNCE(student_dim=student_dim, teacher_dim=teacher_dim,
                        temperature=cfg.temperature)
-    if name == "rkd":
+    # rkd_dist and rkd_angle are the same module with one weight set to zero,
+    # which the module then skips entirely -- see rkd.py.
+    if name in ("rkd", "rkd_dist", "rkd_angle"):
         return RKD(weight_distance=cfg.weight_distance,
                    weight_angle=cfg.weight_angle)
     if name == "sp_kd":
         return SimilarityPreserving()
+    if name == "sp_kd_std":
+        return SimilarityPreservingStandardized()
     raise ValueError(f"unknown loss {name!r}")

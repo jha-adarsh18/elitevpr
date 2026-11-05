@@ -1,0 +1,5 @@
+# RKD, distance term only. The angle term is skipped, not down-weighted.
+name: rkd_dist
+weight: 1.0
+weight_distance: 1.0
+weight_angle: 0.0

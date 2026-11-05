@@ -15,7 +15,9 @@ import torch
 import torch.nn.functional as F
 
 from elitevpr.losses import (FeatureCosine, FeatureMSE, InfoNCE, RKD,
-                             SimilarityPreserving, StructuralKL, build_loss)
+                             SimilarityPreserving,
+                             SimilarityPreservingStandardized, StructuralKL,
+                             build_loss)
 
 REFERENCE_STRUCTURAL_LOSS = '''def structural_loss(student_global, teacher_global, temperature):
     """The settled fixed loss: drop the self-term, z-score, tau in sigma units.
@@ -201,5 +203,123 @@ def test_build_loss_dispatch():
     assert isinstance(build_loss(OmegaConf.create(
         {"name": "rkd", "weight_distance": 1.0, "weight_angle": 2.0}),
         1024, 8448), RKD)
+    assert isinstance(build_loss(OmegaConf.create({"name": "sp_kd_std"}),
+                                 1024, 8448), SimilarityPreservingStandardized)
+    for name, wd, wa in (("rkd_dist", 1.0, 0.0), ("rkd_angle", 0.0, 2.0)):
+        built = build_loss(OmegaConf.create(
+            {"name": name, "weight_distance": wd, "weight_angle": wa}),
+            1024, 8448)
+        assert isinstance(built, RKD)
+        assert (built.weight_distance, built.weight_angle) == (wd, wa)
     with pytest.raises(ValueError, match="unknown loss"):
         build_loss(OmegaConf.create({"name": "nope"}), 1024, 8448)
+
+
+# ----------------------------------------------------------------- sp_kd_std
+
+def test_sp_kd_std_is_zero_on_identical_geometry():
+    """Same relational structure in both spaces -> nothing to learn."""
+    x = torch.randn(12, 64)
+    q, _ = torch.linalg.qr(torch.randn(64, 64))           # a rotation preserves
+    criterion = SimilarityPreservingStandardized()        # every inner product
+    assert criterion(x, x @ q).abs() < 1e-5
+
+
+def test_sp_kd_std_drops_the_diagonal_and_z_scores_each_matrix():
+    """Reproduce the documented expression exactly, off the module's own path."""
+    from elitevpr.losses.structural_kl import drop_diag, standardize
+
+    student, teacher = torch.randn(9, 32), torch.randn(9, 48)
+    z_s = standardize(drop_diag(student @ student.T))
+    z_t = standardize(drop_diag(teacher @ teacher.T))
+    expected = (z_s - z_t).pow(2).mean()
+    assert torch.allclose(SimilarityPreservingStandardized()(student, teacher),
+                          expected, atol=1e-7)
+    # and the standardised matrices really are zero-mean / unit-std, which is
+    # the property the raw Frobenius form lacks
+    for z in (z_s, z_t):
+        assert z.mean().abs() < 1e-5 and abs(z.std().item() - 1.0) < 1e-3
+        assert z.shape == (9, 8)                          # the diagonal is gone
+
+
+def test_sp_kd_std_is_invariant_to_a_global_descriptor_scale():
+    """This is why the row-wise L2 normalisation of the inputs was dropped:
+    scaling by c scales the Gram by c^2 and the z-score divides it out. The
+    published arm is not scale-free -- its raw Gram grows with the norm."""
+    student, teacher = torch.randn(10, 64), torch.randn(10, 96)
+    criterion = SimilarityPreservingStandardized()
+    assert torch.allclose(criterion(student, teacher),
+                          criterion(student * 7.0, teacher * 0.1), atol=1e-5)
+
+
+def test_sp_kd_std_does_not_normalise_per_row_and_that_is_deliberate():
+    """Pins the decision, so nobody re-adds F.normalize to "fix" it.
+
+    Without the input normalisation, PER-ROW norms are no longer neutralised.
+    Measured cost: with the directions fixed and lognormal row norms spanning
+    ~51x, the loss moves ~0.7% of its value -- small, and the teacher cache is
+    unit-norm already (measured 0.999927..1.000014 on the real DSEC cache), so
+    only the student side is affected at all.
+    """
+    criterion = SimilarityPreservingStandardized()
+    directions = torch.nn.functional.normalize(torch.randn(16, 64), dim=-1)
+    teacher = torch.nn.functional.normalize(torch.randn(16, 96), dim=-1)
+    g = torch.Generator().manual_seed(1)
+    rescaled = directions * torch.exp(torch.randn(16, 1, generator=g))
+    base = criterion(directions, teacher)
+    moved = criterion(rescaled, teacher)
+    assert not torch.allclose(base, moved, atol=1e-5)       # it does matter
+    assert (moved - base).abs() < 0.05 * base               # but only a little
+
+
+def test_sp_kd_std_is_not_the_published_sp_kd():
+    """Guard against the two arms silently converging on one implementation."""
+    student, teacher = torch.randn(16, 64), torch.randn(16, 128)
+    assert not torch.allclose(SimilarityPreservingStandardized()(student, teacher),
+                              SimilarityPreserving()(student, teacher), atol=1e-3)
+
+
+def test_sp_kd_std_is_parameter_free_across_mismatched_widths():
+    criterion = SimilarityPreservingStandardized()
+    assert list(criterion.parameters()) == []
+    loss = criterion(torch.randn(8, 1024), torch.randn(8, 8448))
+    assert torch.isfinite(loss) and loss > 0
+
+
+def test_sp_kd_std_has_a_live_gradient():
+    student = torch.randn(16, 64, requires_grad=True)
+    SimilarityPreservingStandardized()(student, torch.randn(16, 128)).backward()
+    assert student.grad.norm() > 1e-4
+
+
+# --------------------------------------------- rkd single-term arms
+
+def test_rkd_dist_skips_the_angle_term_exactly():
+    student, teacher = torch.randn(8, 32), torch.randn(8, 48)
+    skipped = RKD(weight_distance=1.0, weight_angle=0.0)(student, teacher)
+    import torch.nn.functional as F
+    from elitevpr.losses.rkd import _pdist_ratio
+    s = F.normalize(student.float(), p=2, dim=-1)
+    t = F.normalize(teacher.float(), p=2, dim=-1)
+    assert torch.allclose(skipped,
+                          F.smooth_l1_loss(_pdist_ratio(s), _pdist_ratio(t)),
+                          atol=1e-7)
+
+
+def test_rkd_angle_skips_the_distance_term_exactly():
+    student, teacher = torch.randn(8, 32), torch.randn(8, 48)
+    skipped = RKD(weight_distance=0.0, weight_angle=1.0)(student, teacher)
+    import torch.nn.functional as F
+    from elitevpr.losses.rkd import _angles
+    s = F.normalize(student.float(), p=2, dim=-1)
+    t = F.normalize(teacher.float(), p=2, dim=-1)
+    assert torch.allclose(skipped, F.smooth_l1_loss(_angles(s), _angles(t)),
+                          atol=1e-7)
+
+
+def test_single_term_rkd_arms_still_train():
+    for wd, wa in ((1.0, 0.0), (0.0, 2.0)):
+        student = torch.randn(12, 64, requires_grad=True)
+        RKD(weight_distance=wd, weight_angle=wa)(
+            student, torch.randn(12, 96)).backward()
+        assert student.grad.norm() > 1e-6, (wd, wa)

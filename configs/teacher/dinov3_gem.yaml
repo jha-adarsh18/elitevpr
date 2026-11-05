@@ -1,0 +1,9 @@
+# DINOv3 patch tokens under GeM, 1024-d -- a generic (not VPR-trained) teacher.
+# Written by the old pipeline's scripts/cache_teacher_gem.py as gem.npy.
+# Its relational target is near-uniform (off-diagonal cosine 0.96, 29.6 of 31
+# effective neighbours), which is a property of the teacher, not a bug: see
+# memory structural-loss-tau-not-scale-free before "fixing" it.
+# Cache layout: <data_root>/<corpus>/gem/<seq>/gem.npy
+name: dinov3_gem
+dir_name: gem
+file: gem.npy

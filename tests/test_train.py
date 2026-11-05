@@ -10,7 +10,7 @@ from elitevpr.train import main_worker
 
 CONFIGS = str(Path(__file__).resolve().parents[1] / "configs")
 ARMS = ["structural_kl", "feature_cosine", "feature_mse", "infonce",
-        "rkd", "sp_kd"]
+        "rkd", "rkd_dist", "rkd_angle", "sp_kd", "sp_kd_std"]
 
 
 def _cfg(smoke_root, loss, **extra):
@@ -99,3 +99,65 @@ def test_data_root_may_be_unset_when_every_corpus_is_explicit():
         cfg = compose(config_name="config", overrides=overrides)
     resolved = OmegaConf.to_container(cfg, resolve=True)
     assert resolved["corpora"]["m3ed"]["teacher_dir"] == "/cache/megaloc"
+
+
+def test_random_sampler_arm_trains_and_reports_itself(smoke_root, capsys):
+    """`training.sampler=random` is the rkd_randbatch control: uniform draws
+    over the whole corpus instead of contiguous clips."""
+    cfg = _cfg(smoke_root, "rkd", **{"training.sampler": "random"})
+    cfg.checkpoint_dir = f"{smoke_root}/ckpt_rkd_randbatch"
+    result = main_worker(cfg)
+    out = capsys.readouterr().out
+    assert "sampler   random" in out
+    assert "drawn uniformly at random" in out
+    assert "night_frac ignored" in out
+    assert torch.isfinite(torch.tensor(result["best_val"]))
+    assert Path(f"{smoke_root}/ckpt_rkd_randbatch/best.pth").is_file()
+
+
+def test_random_sampler_ignores_the_block_divisibility_rule(smoke_root):
+    """The constraint exists for contiguity; without blocks it must not fire."""
+    cfg = _cfg(smoke_root, "rkd", **{"training.sampler": "random",
+                                     "training.batch_size": 6})
+    cfg.checkpoint_dir = f"{smoke_root}/ckpt_odd_batch"
+    main_worker(cfg)      # block_size=4 does not divide 6; this must not raise
+
+
+def test_unknown_sampler_is_refused(smoke_root):
+    with pytest.raises(SystemExit, match="training.sampler"):
+        main_worker(_cfg(smoke_root, "rkd", **{"training.sampler": "shuffle"}))
+
+
+def test_teacher_group_moves_the_cache_dir_and_the_filename():
+    """One override must repoint every corpus, or an arm would mix teachers."""
+    from hydra import compose, initialize_config_dir
+    from omegaconf import OmegaConf
+
+    for teacher, dir_name, filename in (("megaloc", "megaloc", "megaloc.npy"),
+                                        ("mixvpr", "mixvpr", "mixvpr.npy"),
+                                        ("dinov3_gem", "gem", "gem.npy"),
+                                        ("dinov3_cls", "cls", "cls.npy")):
+        with initialize_config_dir(config_dir=CONFIGS, version_base=None):
+            cfg = compose(config_name="config",
+                          overrides=[f"teacher={teacher}", "data_root=/data",
+                                     "checkpoint_dir=/ckpt"])
+        resolved = OmegaConf.to_container(cfg, resolve=True)
+        assert resolved["teacher"]["file"] == filename
+        for corpus in ("dsec", "m3ed", "vivid"):
+            assert resolved["corpora"][corpus]["teacher_dir"] == \
+                f"/data/{corpus}/{dir_name}"
+
+
+def test_megaloc_remains_the_default_teacher():
+    """The reported recipe must not move because a group was introduced."""
+    from hydra import compose, initialize_config_dir
+    from omegaconf import OmegaConf
+
+    with initialize_config_dir(config_dir=CONFIGS, version_base=None):
+        cfg = compose(config_name="config",
+                      overrides=["data_root=/data", "checkpoint_dir=/ckpt"])
+    resolved = OmegaConf.to_container(cfg, resolve=True)
+    assert resolved["teacher"]["name"] == "megaloc"
+    assert resolved["teacher"]["file"] == "megaloc.npy"
+    assert resolved["corpora"]["dsec"]["teacher_dir"] == "/data/dsec/megaloc"
+    assert resolved["training"]["sampler"] == "block"

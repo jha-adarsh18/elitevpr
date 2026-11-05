@@ -3,7 +3,7 @@
 # across runs.
 root_dir: ${data_root}/m3ed
 output_dir: ${data_root}/m3ed/features
-teacher_dir: ${data_root}/m3ed/megaloc
+teacher_dir: ${data_root}/m3ed/${teacher.dir_name}
 pair_stride: 1
 
 train_seq_list: null        # null -> every sequence in pairs.txt

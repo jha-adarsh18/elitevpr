@@ -1,0 +1,7 @@
+# RKD, angle term only. The distance term is skipped, not down-weighted.
+# The weight stays at Park et al.'s 2.0 so the term enters at the size it was
+# calibrated at; `loss.weight_angle=1.0` is the unit-weight variant.
+name: rkd_angle
+weight: 1.0
+weight_distance: 0.0
+weight_angle: 2.0

@@ -1,0 +1,7 @@
+# MegaLoc (gmberton/MegaLoc), 8448-d. The reported recipe's teacher: the
+# strongest VPR-trained RGB descriptor we cached, and the only one whose
+# relational target carries usable structure at tau=1.0.
+# Cache layout: <data_root>/<corpus>/megaloc/<seq>/megaloc.npy
+name: megaloc
+dir_name: megaloc
+file: megaloc.npy

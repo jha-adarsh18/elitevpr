@@ -12,7 +12,7 @@ import hydra
 import torch
 import torch.optim as optim
 from omegaconf import DictConfig, OmegaConf
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler
 from tqdm import tqdm
 
 from elitevpr.data import BlockSampler, build_split
@@ -119,8 +119,8 @@ def main_worker(cfg: DictConfig):
     amp = bool(cfg.training.enable_amp) and device.type == "cuda"
 
     dataset_cfgs = corpora(cfg)
-    train_ds = build_split(dataset_cfgs, "train_seq_list", cfg.teacher_file)
-    val_ds = build_split(dataset_cfgs, "val_seq_list", cfg.teacher_file,
+    train_ds = build_split(dataset_cfgs, "train_seq_list", cfg.teacher.file)
+    val_ds = build_split(dataset_cfgs, "val_seq_list", cfg.teacher.file,
                          pair_stride_override=1)
     print(f"train pairs: {len(train_ds)}   val pairs: {len(val_ds)}")
 
@@ -128,11 +128,25 @@ def main_worker(cfg: DictConfig):
 
     block = int(cfg.training.block_size)
     batch = int(cfg.training.batch_size)
-    if batch % block:
-        raise SystemExit(f"batch_size={batch} must be a multiple of "
-                         f"block_size={block}")
-    sampler = BlockSampler(train_ds, night, block=block,
-                           night_frac=float(cfg.training.night_frac))
+    kind = str(cfg.training.sampler)
+    if kind == "block":
+        if batch % block:
+            raise SystemExit(f"batch_size={batch} must be a multiple of "
+                             f"block_size={block}")
+        sampler = BlockSampler(train_ds, night, block=block,
+                               night_frac=float(cfg.training.night_frac))
+        batch_desc = (f"{batch} in blocks of {block}, "
+                      f"night_frac={float(cfg.training.night_frac):g}")
+    elif kind == "random":
+        # Uniform over every pair in the corpus, without replacement: no
+        # contiguity and no night oversampling, so a batch is `batch`
+        # unrelated places. Seeded by torch.manual_seed(cfg.seed) above.
+        sampler = RandomSampler(train_ds, replacement=False)
+        batch_desc = (f"{batch} drawn uniformly at random "
+                      f"(no blocks, night_frac ignored)")
+    else:
+        raise SystemExit(
+            f"unknown training.sampler={kind!r}: choose 'block' or 'random'")
 
     train_dl = DataLoader(train_ds, batch_size=batch, sampler=sampler,
                           num_workers=cfg.num_workers, pin_memory=True,
@@ -166,7 +180,7 @@ def main_worker(cfg: DictConfig):
                  if cfg.training.use_scheduler else None)
 
     print("=" * 70)
-    print(f"teacher   {cfg.teacher_file} ({teacher_width}-d)")
+    print(f"teacher   {cfg.teacher.name}: {cfg.teacher.file} ({teacher_width}-d)")
     # Night names may include validation traverses; report the pool the
     # sampler will actually draw from.
     night_in_train = set(night) & set(train_ds.sequence_names())
@@ -176,8 +190,8 @@ def main_worker(cfg: DictConfig):
     print(f"student   {cfg.model.backbone_name}, {cfg.model.teacher_dim}-d, "
           f"pooling={cfg.model.pooling}")
     print(f"loss      {cfg.loss.name} (weight {float(cfg.loss.weight):g})")
-    print(f"batch     {batch} in blocks of {block}, "
-          f"night_frac={float(cfg.training.night_frac):g} -- "
+    print(f"sampler   {kind}")
+    print(f"batch     {batch_desc} -- "
           f"{len(train_dl)} steps/epoch x {cfg.training.epochs} epochs")
     print(f"optimiser AdamW lr={lr:g}, amp={amp}")
     print("=" * 70)

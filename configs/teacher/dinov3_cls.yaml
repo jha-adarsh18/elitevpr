@@ -1,0 +1,8 @@
+# DINOv3 CLS token, 1024-d. Sidesteps GeM entirely: the old pipeline's GeM does
+# clamp(min=1e-6).pow(3) on raw signed DINOv3 tokens, which collapses every
+# negative coordinate onto a shared constant. Written as cls.npy alongside the
+# patch cache by the old feature_extractor.py -- no separate caching pass.
+# Cache layout: <data_root>/<corpus>/cls/<seq>/cls.npy
+name: dinov3_cls
+dir_name: cls
+file: cls.npy

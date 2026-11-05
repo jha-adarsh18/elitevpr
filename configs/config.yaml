@@ -7,6 +7,7 @@ defaults:
   - model: student
   - training: phase1
   - loss: structural_kl
+  - teacher: megaloc
   - logging: wandb
   - _self_
 
@@ -19,7 +20,10 @@ early_stopping: 0           # 0 = run every epoch; validation is a weak criterio
 # Corpus paths are derived from this; override a corpus's keys directly if its
 # layout differs.
 data_root: ???
-teacher_file: megaloc.npy   # <teacher_dir>/<seq>/<this>, one row per frame
+# The teacher is a config group: `teacher=mixvpr` moves both the cache
+# directory and the filename, for every corpus at once. The student's own
+# output width is model.teacher_dim; the teacher's width is read from the
+# cache, so an arm with a projection head adapts to it without an override.
 
 checkpoint_dir: ???
 output_dir: ${checkpoint_dir}/hydra

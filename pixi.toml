@@ -22,10 +22,32 @@ torch = "==2.12.1"
 [feature.cu128.pypi-dependencies]
 torch = { version = "==2.10.0", index = "https://download.pytorch.org/whl/cu128" }
 
+# The evaluation layer imports the official benchmark, which pulls in a few
+# libraries the training package does not need. They live in their own feature
+# so `default` stays exactly the stack the reported numbers came from.
+[feature.eval.dependencies]
+# pinned to pyproject's numpy, or the conda solve pulls a newer one and the
+# pypi pin becomes unsatisfiable
+numpy = "==2.4.6"
+pandas = "*"
+scikit-learn = "*"
+scipy = "*"
+pillow = "*"
+
+[feature.eval.pypi-dependencies]
+torchvision = "*"
+
 [environments]
 default = ["cu130"]
 cu128 = ["cu128"]
+eval = ["cu130", "eval"]
 
 [tasks]
 train = "python -m elitevpr.train"
 test = "pytest -q"
+
+[feature.eval.tasks]
+# ELITEVPR_BENCH must point at a checkout of
+# github.com/theresejoseph/ensemble_event_vpr_bench
+acceptance = "python -m elitevpr.eval.acceptance"
+eval-test = "pytest -q tests/test_eval.py"

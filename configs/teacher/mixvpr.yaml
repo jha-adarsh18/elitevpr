@@ -1,0 +1,7 @@
+# MixVPR (ResNet50 trunk + MLP-Mixer aggregation), 4096-d. Architecturally
+# unrelated to MegaLoc, so it separates "a VPR-trained teacher" from "that
+# particular teacher". Written by the old pipeline's scripts/cache_mixvpr.py.
+# Cache layout: <data_root>/<corpus>/mixvpr/<seq>/mixvpr.npy
+name: mixvpr
+dir_name: mixvpr
+file: mixvpr.npy

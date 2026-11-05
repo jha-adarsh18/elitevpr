@@ -40,6 +40,16 @@ class RKD(nn.Module):
     def forward(self, student_global, teacher_global):
         s = F.normalize(student_global.float(), p=2, dim=-1)
         t = F.normalize(teacher_global.float(), p=2, dim=-1)
-        loss_d = F.smooth_l1_loss(_pdist_ratio(s), _pdist_ratio(t))
-        loss_a = F.smooth_l1_loss(_angles(s), _angles(t))
-        return self.weight_distance * loss_d + self.weight_angle * loss_a
+        # A zero-weighted term is SKIPPED, not multiplied by zero: the angle
+        # term alone materialises two B x B x D tensors (35 MB at B=32 for an
+        # 8448-d teacher), and the single-term arms `rkd_dist` / `rkd_angle`
+        # exist precisely to run without the other one. The returned value is
+        # unchanged whenever both weights are non-zero.
+        loss = s.new_zeros(())
+        if self.weight_distance:
+            loss = loss + self.weight_distance * F.smooth_l1_loss(
+                _pdist_ratio(s), _pdist_ratio(t))
+        if self.weight_angle:
+            loss = loss + self.weight_angle * F.smooth_l1_loss(
+                _angles(s), _angles(t))
+        return loss

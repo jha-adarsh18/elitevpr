@@ -6,7 +6,7 @@
 # corpus; `~corpora.vivid` is the 2-corpus arm.
 root_dir: ${data_root}/vivid
 output_dir: ${data_root}/vivid/features
-teacher_dir: ${data_root}/vivid/megaloc
+teacher_dir: ${data_root}/vivid/${teacher.dir_name}
 pair_stride: 1
 
 train_seq_list: null

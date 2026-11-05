@@ -1,0 +1,5 @@
+# sp_kd with the diagonal dropped and each Gram matrix z-scored by its own
+# off-diagonal mean/std, compared by mean squared difference instead of the
+# published row-normalised Frobenius form. See losses/sp_kd_std.py.
+name: sp_kd_std
+weight: 1.0
